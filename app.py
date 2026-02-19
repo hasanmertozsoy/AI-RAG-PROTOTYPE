@@ -233,7 +233,6 @@ with st.sidebar:
             if vs:
                 st.session_state.vectorstore = vs
                 st.session_state.doc_stats = {"count": count, "names": names}
-                st.session_state.messages = []
                 st.rerun()
         else:
             st.warning("Lütfen dosya seçin.")
