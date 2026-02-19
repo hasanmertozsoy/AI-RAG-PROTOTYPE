@@ -143,20 +143,16 @@ def process_documents(uploaded_files):
     try:
         embeddings = GeminiEmbeddings(api_key)
         
-        # PERSISTENCE (Kalıcılık) engellemek ve temiz bir başlangıç yapmak için:
         vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
             embedding_function=embeddings,
-            # persist_directory=None # Eğer diskte tutuyorsanız burayı belirtmelisiniz
         )
         
-        # Mevcut koleksiyonu tamamen sil
         try:
             vectorstore.delete_collection()
         except:
             pass
 
-        # Şimdi temizlenmiş koleksiyona yeni dokümanları ekle
         vectorstore = Chroma.from_documents(
             documents=all_chunks,
             embedding=embeddings,
@@ -254,18 +250,14 @@ else:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            # Sadece asistan mesajlarında ve eğer kaynak varsa göster
         if msg["role"] == "assistant" and msg.get("sources"):
-            # Kaynakların benzersiz olduğundan emin olalım
             unique_sources = sorted(list(set(msg["sources"])))
             
-            # Kaynak çiplerini oluştur
             chips = "".join([
                 f'<span class="source-chip">📎 {s}</span>' 
                 for s in unique_sources
             ])
             
-            # HTML ile temiz bir görünüm sağla
             st.markdown(
                 f'<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">{chips}</div>', 
                 unsafe_allow_html=True
