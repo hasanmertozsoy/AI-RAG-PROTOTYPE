@@ -11,7 +11,12 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 
+# Ortam değişkenlerini yükle (.env), API erişimi için
+
 load_dotenv()
+
+# RAG ve model yapılandırma sabitleri
+
 COLLECTION_NAME = "company_docs"
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 100
@@ -25,12 +30,16 @@ FILE_ICONS = {
     "md": "🗒️",
 }
 
+# Streamlit sayfası için bazı ayarlar
+
 st.set_page_config(
     page_title="Şirket İçi AI Asistan",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# CSS stilleri, streamlit özel stillemeleri zorlaştırıyor
 
 st.markdown("""
 <style>
@@ -55,12 +64,16 @@ section[data-testid="stSidebar"] .stButton > button:hover, section[data-testid="
 </style>
 """, unsafe_allow_html=True)
 
+# Oturum durumu session başlatma
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
 if "doc_stats" not in st.session_state:
     st.session_state.doc_stats = {"count": 0, "names": []}
+
+# LangChain uyumlu güncel sürüm Gemini Embedding sınıfı
 
 class GeminiEmbeddings(Embeddings):
     def __init__(self, api_key: str):
@@ -85,6 +98,8 @@ class GeminiEmbeddings(Embeddings):
 def get_api_key():
     return os.environ.get("GEMINI_API_KEY")
 
+# Belgeleri yükleme, parçalama ve vektör veritabanına aktarma işlemleri içerir
+
 def process_documents(uploaded_files):
     api_key = get_api_key()
     if not api_key:
@@ -101,6 +116,8 @@ def process_documents(uploaded_files):
     all_chunks = []
     processed_names = []
     
+    # Metinler uygun seçilen chunk ve overlap parametreleriyle parçalanıyor burada
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -109,6 +126,8 @@ def process_documents(uploaded_files):
 
     status_container = st.status("Dokümanlar işleniyor...", expanded=True)
     
+    # Dosyalar geçici olarak diske yazılır ve LangChain ile okunur
+
     for file in uploaded_files:
         ext = file.name.rsplit(".", 1)[-1].lower()
         if ext not in loaders:
@@ -143,15 +162,21 @@ def process_documents(uploaded_files):
     try:
         embeddings = GeminiEmbeddings(api_key)
         
+        # Geçici olarak ChromaDB koleksiyonu vektör veritabanı oluşturulur
+
         vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
             embedding_function=embeddings,
         )
         
+        # Mevcut kayıtlı koleksiyon silinir
+
         try:
             vectorstore.delete_collection()
         except:
             pass
+
+        # Yeni belge parçaları koleksiyona eklenir
 
         vectorstore = Chroma.from_documents(
             documents=all_chunks,
@@ -165,9 +190,13 @@ def process_documents(uploaded_files):
         status_container.update(label=f"Vektör/Embedding hatası: {e}", state="error")
         return None, 0, []
 
+# Burada kullanıcı sorgusu vektör araması (vectorstore.similarity_search) ile işlenir, LLM'den yanıt alınır
+
 def get_rag_response(query: str, vectorstore: Chroma, total_chunks: int):
     client = genai.Client(api_key=get_api_key())
     
+    #Ortalama dosyalarda 5 parça getirmek yeterli, daha fazla yerden bilgi çekmek için k>5 olabilir ama fazla API tokeni kullanılır
+
     k = min(DEFAULT_RETRIEVAL_K, total_chunks) if total_chunks > 0 else 1
     retrieved_docs = vectorstore.similarity_search(query, k=k)
 
@@ -177,6 +206,8 @@ def get_rag_response(query: str, vectorstore: Chroma, total_chunks: int):
     context_parts = []
     source_set = set()
     
+    # Bulunan parçalar llm'in kullanması için birleştirilir ve context'e alınır
+
     for d in retrieved_docs:
         src = d.metadata.get("source", "Bilinmeyen")
         page = d.metadata.get("page", None)
@@ -187,6 +218,8 @@ def get_rag_response(query: str, vectorstore: Chroma, total_chunks: int):
 
     context_str = "\n\n".join(context_parts)
     sources = list(source_set)
+
+    # Sistem promptu cevap formatını belirlemek, ayarlamak için kritik
 
     system_instruction = f"""Sen bir şirket içi dokümantasyon asistanısın. Görevin, yalnızca sana verilen şirket dokümanlarına dayanarak soruları yanıtlamaktır.
 
@@ -213,6 +246,8 @@ Bağlam:
     except Exception as e:
         return f"Model hatası: {str(e)}", []
 
+# Arayüzdeki sidebar
+
 with st.sidebar:
     st.title("Doküman Yönetimi")
     uploaded_files = st.file_uploader(
@@ -221,6 +256,8 @@ with st.sidebar:
         accept_multiple_files=True
     )
     
+    # Dosya işleme butonu ile önce var olan vektörel data temizlenir sonra yeni veri embed edilir
+
     if st.button("Dosyaları İşle", use_container_width=True):
         if uploaded_files:
             st.session_state.vectorstore = None
@@ -234,6 +271,9 @@ with st.sidebar:
             st.warning("Lütfen dosya seçin.")
 
     st.divider()
+
+    # İşlenen dokümanlar alt alta listelenir bilgilendirme amaçlı
+
     if st.session_state.doc_stats["names"]:
         st.caption(f"İndeks: {st.session_state.doc_stats['count']} parça")
         for name in st.session_state.doc_stats["names"]:
@@ -242,11 +282,16 @@ with st.sidebar:
     else:
         st.info("Henüz doküman işlenmedi.")
 
+# Arayüz sohbet bölümü ayarlamaları
+
 st.title("Şirket İçi AI Asistan")
 
 if not st.session_state.vectorstore:
     st.info("Başlamak için sol menüden doküman yükleyip 'İşle' butonuna basınız.")
 else:
+
+    # Sohbet geçmişini ekrana yazdırmak için
+
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -262,6 +307,8 @@ else:
                 f'<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">{chips}</div>', 
                 unsafe_allow_html=True
             )
+
+    # Kullanıcının metin girişi ve asistan yanıt döngüsü
 
     if prompt := st.chat_input("Sorunuzu buraya yazın..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -281,6 +328,8 @@ else:
                     chips = "".join([f'<span class="source-chip">📎 {s}</span>' for s in source_list])
                     st.markdown(f"<br>{chips}", unsafe_allow_html=True)
         
+        # Gelen yanıt sohbet geçmişine eklenir
+
         st.session_state.messages.append({
             "role": "assistant", 
             "content": response_text, 
