@@ -15,7 +15,7 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, Te
 
 load_dotenv()
 
-# RAG ve model yapılandırma sabitleri
+# RAG ve model yapılandırma sabitleri, direkt sorgu kalitesini etkiliyor
 
 COLLECTION_NAME = "company_docs"
 CHUNK_SIZE = 500
