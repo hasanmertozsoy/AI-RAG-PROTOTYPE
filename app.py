@@ -10,6 +10,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
+from langchain_community.document_loaders import UnstructuredExcelLoader
 
 # Ortam değişkenlerini yükle (.env), API erişimi için
 
@@ -28,6 +29,8 @@ FILE_ICONS = {
     "docx": "📝",
     "txt": "📃",
     "md": "🗒️",
+    "xlsx": "📊",
+    "xls": "📊",
 }
 
 # Streamlit sayfası için bazı ayarlar
@@ -111,6 +114,8 @@ def process_documents(uploaded_files):
         "docx": Docx2txtLoader,
         "txt": lambda p: TextLoader(p, encoding="utf-8"),
         "md": lambda p: TextLoader(p, encoding="utf-8"),
+        "xlsx": UnstructuredExcelLoader,
+        "xls": UnstructuredExcelLoader,
     }
 
     all_chunks = []
