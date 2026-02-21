@@ -17,6 +17,7 @@ from langchain_community.document_loaders import UnstructuredExcelLoader
 load_dotenv()
 
 # RAG ve model yapılandırma sabitleri, direkt sorgu kalitesini etkiliyor
+# Buradaki parametre değerleri (TEMPERATURE hariç) doküman uzunluğuna, sayısına göre düzenlenebilir.
 
 COLLECTION_NAME = "company_docs"
 CHUNK_SIZE = 500
