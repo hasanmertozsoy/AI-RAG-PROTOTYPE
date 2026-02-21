@@ -2,7 +2,7 @@ Yerel şirket dokümanları üzerinde çalışan, RAG (Retrieval-Augmented Gener
 
 ## Özellikler
 
-* **Çoklu Format Desteği:** PDF, DOCX, TXT ve MD dosyalarını işleme yeteneği.
+* **Çoklu Format Desteği:** PDF, DOCX, XLSX, TXT ve MD dosyalarını işleme yeteneği.
 * **Modern Altyapı:** Arayüz için Streamlit, LLM ve embedding işlemleri için Google GenAI, vektör veritabanı için ChromaDB ve doküman yönetimi için LangChain entegrasyonu.
 * **Doğru ve Güvenilir Yanıtlar:** Yanıtları oluştururken referans alınan belge isimlerini kaynak çipleri olarak kullanıcıya sunma.
 
