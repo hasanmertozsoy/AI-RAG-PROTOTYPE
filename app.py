@@ -1,5 +1,6 @@
 import os
 import tempfile
+import pandas as pd
 import streamlit as st
 from typing import List, Tuple, Optional
 from dotenv import load_dotenv
@@ -7,7 +8,7 @@ from google import genai
 from google.genai import types as genai_types
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_core.embeddings import Embeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from langchain_community.document_loaders import UnstructuredExcelLoader
@@ -77,28 +78,6 @@ if "vectorstore" not in st.session_state:
 if "doc_stats" not in st.session_state:
     st.session_state.doc_stats = {"count": 0, "names": []}
 
-# LangChain uyumlu güncel sürüm Gemini Embedding sınıfı
-
-class GeminiEmbeddings(Embeddings):
-    def __init__(self, api_key: str):
-        self._client = genai.Client(api_key=api_key)
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        result = self._client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=texts,
-            config=genai_types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
-        )
-        return [e.values for e in result.embeddings]
-
-    def embed_query(self, text: str) -> List[float]:
-        result = self._client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=text,
-            config=genai_types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
-        )
-        return result.embeddings[0].values
-
 def get_api_key():
     return os.environ.get("GEMINI_API_KEY")
 
@@ -115,8 +94,8 @@ def process_documents(uploaded_files):
         "docx": Docx2txtLoader,
         "txt": lambda p: TextLoader(p, encoding="utf-8"),
         "md": lambda p: TextLoader(p, encoding="utf-8"),
-        "xlsx": UnstructuredExcelLoader,
-        "xls": UnstructuredExcelLoader,
+        "xlsx": lambda p: UnstructuredExcelLoader(p, mode="elements"),
+        "xls": lambda p: UnstructuredExcelLoader(p, mode="elements"),
     }
 
     all_chunks = []
@@ -166,7 +145,10 @@ def process_documents(uploaded_files):
     status_container.write("Vektör veritabanı oluşturuluyor...")
     
     try:
-        embeddings = GeminiEmbeddings(api_key)
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/gemini-embedding-001", 
+            google_api_key=api_key
+        )
         
         # Geçici olarak ChromaDB koleksiyonu vektör veritabanı oluşturulur
 
@@ -179,8 +161,8 @@ def process_documents(uploaded_files):
 
         try:
             vectorstore.delete_collection()
-        except:
-            pass
+        except Exception as e:
+            print(f"Eski koleksiyon silinirken uyarı: {e}")
 
         # Yeni belge parçaları koleksiyona eklenir
 
@@ -201,10 +183,13 @@ def process_documents(uploaded_files):
 def get_rag_response(query: str, vectorstore: Chroma, total_chunks: int):
     client = genai.Client(api_key=get_api_key())
     
-    #Ortalama dosyalarda 5 parça getirmek yeterli, daha fazla yerden bilgi çekmek için k>5 olabilir ama fazla API tokeni kullanılır
+    # Ortalama dosyalarda 5 parça getirmek yeterli, daha fazla yerden bilgi çekmek için k>5 olabilir ama fazla API tokeni kullanılır
 
-    k = min(DEFAULT_RETRIEVAL_K, total_chunks) if total_chunks > 0 else 1
-    retrieved_docs = vectorstore.similarity_search(query, k=k)
+    try:
+        k = min(DEFAULT_RETRIEVAL_K, total_chunks) if total_chunks > 0 else 1
+        retrieved_docs = vectorstore.similarity_search(query, k=k)
+    except Exception as e:
+        return f"Vektör veritabanında arama yapılırken hata oluştu: {str(e)}", []
 
     if not retrieved_docs:
         return "Dokümanlarda bu soruyla ilgili bilgi bulunamadı.", []
@@ -248,9 +233,14 @@ Bağlam:
                 temperature=TEMPERATURE
             )
         )
+        if not resp or not hasattr(resp, 'text') or not resp.text:
+            return "Model bir yanıt üretemedi. Sorunuz güvenlik filtrelerine takılmış olabilir.", sources
         return resp.text, sources
     except Exception as e:
-        return f"Model hatası: {str(e)}", []
+        error_msg = str(e).lower()
+        if "deadline" in error_msg or "timeout" in error_msg:
+            return "İşlem zaman aşımına uğradı. Soruyu basitleştirmeniz gerekebilir.", sources
+        return f"Model hatası: {str(e)}", sources
 
 # Arayüzdeki sidebar
 
@@ -301,18 +291,18 @@ else:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-        if msg["role"] == "assistant" and msg.get("sources"):
-            unique_sources = sorted(list(set(msg["sources"])))
-            
-            chips = "".join([
-                f'<span class="source-chip">📎 {s}</span>' 
-                for s in unique_sources
-            ])
-            
-            st.markdown(
-                f'<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">{chips}</div>', 
-                unsafe_allow_html=True
-            )
+            if msg["role"] == "assistant" and msg.get("sources"):
+                unique_sources = sorted(list(set(msg["sources"])))
+                
+                chips = "".join([
+                    f'<span class="source-chip">📎 {s}</span>' 
+                    for s in unique_sources
+                ])
+                
+                st.markdown(
+                    f'<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">{chips}</div>', 
+                    unsafe_allow_html=True
+                )
 
     # Kullanıcının metin girişi ve asistan yanıt döngüsü
 
@@ -323,21 +313,24 @@ else:
 
         with st.chat_message("assistant"):
             with st.spinner("Dokümanlar taranıyor..."):
-                response_text, source_list = get_rag_response(
-                    prompt, 
-                    st.session_state.vectorstore, 
-                    st.session_state.doc_stats["count"]
-                )
-                
-                st.markdown(response_text)
-                if source_list:
-                    chips = "".join([f'<span class="source-chip">📎 {s}</span>' for s in source_list])
-                    st.markdown(f"<br>{chips}", unsafe_allow_html=True)
-        
-        # Gelen yanıt sohbet geçmişine eklenir
-
-        st.session_state.messages.append({
-            "role": "assistant", 
-            "content": response_text, 
-            "sources": source_list
-        })
+                try:
+                    response_text, source_list = get_rag_response(
+                        prompt, 
+                        st.session_state.vectorstore, 
+                        st.session_state.doc_stats["count"]
+                    )
+                    
+                    st.markdown(response_text)
+                    if source_list:
+                        unique_sources = sorted(list(set(source_list)))
+                        chips = "".join([f'<span class="source-chip">📎 {s}</span>' for s in unique_sources])
+                        st.markdown(f'<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">{chips}</div>', unsafe_allow_html=True)
+            
+                    # Gelen yanıt sohbet geçmişine eklenir
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": response_text, 
+                        "sources": source_list
+                    })
+                except Exception as e:
+                    st.error(f"Beklenmeyen bir sistem hatası oluştu, detay: {str(e)}")
